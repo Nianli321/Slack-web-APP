@@ -1,0 +1,433 @@
+import pytest
+
+from backend import authentication
+from backend import channel as channel_utils
+from backend import message as message_utils
+from backend import storage
+from backend import errors
+'''channel = {
+    'name' = 'channelname',
+    'is_public' = something 
+    'channelID' = 123,
+    'members' = [{'first_name': 123, 'last_name': 123, 'u_id':123}, { }   ]
+    'membersUID' = [123, 123]
+    'ownersUID' = [123, 123]
+    'messages' = [{ 'message_id': 123, 'u_id': 123, 'message': 123, 'time_created': 123 , 'reacts': 123, 'is_pinned': 123 }, ......]
+
+}
+'''
+storage.clear_data_store()
+'''
+def creatUser(email, password, First_name, Last_name):
+    user = authentication.auth_register(email, password, First_name, Last_name)
+    token = user['token']
+    u_id = authentication.decode_token(token)['u_id']
+    
+    return {
+        'token' : token,
+        'u_id'  : u_id
+    }
+'''        
+
+def test1_channelcreat ():
+    #storage.clear_data_store()
+    user = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token = user['token']
+    u_id = authentication.decode_token(token)['u_id']
+    
+    
+    channel_id = channel_utils.channels_create(token, 'name', True)['channel_id']
+    ans = {
+        'first_name': 'Khanh', 'last_name': 'Nguyen', 'u_id':u_id   
+    }
+    assert(channel_utils.search_channel(channel_id) == True)
+    assert(channel_utils.get_channel(channel_id)['name'] == 'name')
+    assert(channel_utils.get_channel(channel_id)['is_public'] == True)
+    assert(channel_utils.get_channel(channel_id)['channelID'] == channel_id)
+    assert(channel_utils.get_channel(channel_id)['membersUID'][0] == u_id)
+    assert(channel_utils.get_channel(channel_id)['ownersUID'][0] == u_id)
+    assert(channel_utils.get_channel(channel_id)['messages'] == []) 
+    assert(channel_utils.get_channel(channel_id)['members'][0] == ans)
+    
+    
+    user2 = authentication.auth_register('vailwqwid2@gmail.com', '123456', 'Ann', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_join(token2, 152))
+    channel_utils.channel_join(token2, channel_id)
+    ans2 = {
+        'first_name': 'Ann', 'last_name': 'Nguyen', 'u_id':u_id2   
+    }
+    
+    assert(channel_utils.search_channel(channel_id) == True)
+    assert(channel_utils.get_channel(channel_id)['name'] == 'name')
+    assert(channel_utils.get_channel(channel_id)['is_public'] == True)
+    assert(channel_utils.get_channel(channel_id)['channelID'] == channel_id)
+    assert(channel_utils.get_channel(channel_id)['membersUID'][1] == u_id2)
+    assert(channel_utils.get_channel(channel_id)['ownersUID'][0] == u_id)
+    assert(channel_utils.get_channel(channel_id)['messages'] == []) 
+    assert(channel_utils.get_channel(channel_id)['members'][1] == ans2)
+    
+def test_channel_listall():
+    storage.clear_data_store()
+    
+    user = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token = user['token']
+    u_id = authentication.decode_token(token)['u_id']
+    
+    channel_id1 = channel_utils.channels_create(token, 'Ian', True)['channel_id']
+    channel_id2 = channel_utils.channels_create(token, 'Joanne', True)['channel_id']
+    
+    channel_list = channel_utils.channels_listall(token)
+    
+    ans = {}
+    ans['channels'] = channels = [
+        {
+            'channel_id': channel_id1,
+            'name' : 'Ian'
+        },
+        {
+            'channel_id': channel_id2,
+            'name' : 'Joanne'
+        }   
+    ]
+    assert(channel_list == ans)
+    
+def test_channel_list():
+    storage.clear_data_store()
+   
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    channel_id1 = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    channel_id2 = channel_utils.channels_create(token1, 'Joanne', True)['channel_id']
+    
+    user2 = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    
+    channel_id3 = channel_utils.channels_create(token2, 'Gorden', True)['channel_id']
+    
+    channel_list1 = channel_utils.channels_list(token1)
+    ans1 = {}
+    ans1['channels'] = channels = [
+        {
+            'channel_id': channel_id1,
+            'name' : 'Ian'
+        },
+        {
+            'channel_id': channel_id2,
+            'name' : 'Joanne'
+        }   
+    ]
+    assert(channel_list1 == ans1)
+    
+    channel_list2 = channel_utils.channels_list(token2)
+    ans2 = {}
+    ans2['channels'] = channels = [
+        {
+            'channel_id': channel_id3,
+            'name' : 'Gorden'
+        }  
+    ]
+    assert(channel_list2 == ans2)
+    
+def test_channel_addowner():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    user2 = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    
+    user4 = authentication.auth_register('vailf1311whgrehid2@gmail.com', '123456', 'Mike', 'A')
+    token4 = user4['token']
+    u_id4 = authentication.decode_token(token4)['u_id']
+    
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    with pytest.raises(errors.AccessError):
+        assert(channel_utils.channel_addowner(token4, channel_id, u_id2))
+    with pytest.raises(errors.AccessError):
+        assert(channel_utils.channel_addowner('312312', channel_id, u_id2))    
+    channel_utils.channel_addowner(token1, channel_id, u_id2)
+    
+    channel = channel_utils.get_channel(channel_id)
+    assert(u_id1 in channel['ownersUID'])
+    assert(u_id2 in channel['ownersUID'])
+    assert(u_id1 in channel['membersUID'])
+    assert(u_id2 in channel['membersUID'])
+    
+    info1 = channel_utils.create_user_info(u_id1, 'jan', 'Nguyen')
+    info2 = channel_utils.create_user_info(u_id2, 'Khanh', 'Nguyen')
+    
+    assert(info1 in channel['members'])
+    assert(info2 in channel['members'])
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_addowner(token1, channel_id, u_id2))
+        
+    user3 = authentication.auth_register('vailfwhgrehid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token3 = user3['token']
+    u_id3 = authentication.decode_token(token3)['u_id']
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_addowner(token1, 134124, u_id3))
+    
+    channel_utils.channel_join(token4, channel_id)
+   
+    channel_utils.channel_addowner(token1, channel_id, u_id4)
+    update_channel = channel_utils.get_channel(channel_id)
+    assert(u_id4 in update_channel['ownersUID'])
+            
+
+def test_channel_removeowner():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    user2 = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    
+    user4 = authentication.auth_register('vailf1311whgrehid2@gmail.com', '123456', 'Mike', 'A')
+    token4 = user4['token']
+    u_id4 = authentication.decode_token(token4)['u_id']
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    
+    channel_utils.channel_addowner(token1, channel_id, u_id2)
+    with pytest.raises(errors.AccessError):
+        assert(channel_utils.channel_removeowner(token2, channel_id, u_id1))
+    with pytest.raises(errors.AccessError):
+        assert(channel_utils.channel_removeowner('312312', channel_id, u_id1))
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_removeowner(token2, 135, u_id1))
+    
+    channel_utils.channel_removeowner(token2, channel_id, u_id1)
+    channel = channel_utils.get_channel(channel_id)
+    
+    info1 = channel_utils.create_user_info(u_id1, 'jan', 'Nguyen')
+    info2 = channel_utils.create_user_info(u_id2, 'Khanh', 'Nguyen')
+    
+    assert(u_id1 not in channel['ownersUID'])
+    assert(u_id2 in channel['ownersUID'])
+    
+    assert(info1 in channel['members'])
+    assert(info2 in channel['members'])
+    
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_removeowner(token2, channel_id, u_id1))
+    
+    
+        
+    
+def test_channel_leave():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    user2 = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    
+    user3 = authentication.auth_register('vailfwhgrehid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token3 = user3['token']
+    u_id3 = authentication.decode_token(token3)['u_id']
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    channel_utils.channel_join(token2, channel_id)
+    
+    channel = channel_utils.get_channel(channel_id)
+    
+    info1 = channel_utils.create_user_info(u_id1, 'jan', 'Nguyen')
+    
+    
+    assert(u_id2 in channel['membersUID'])
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_leave(token2, 1234))
+    channel_utils.channel_leave(token2, channel_id)
+    
+    updated_channel = channel_utils.get_channel(channel_id)
+    assert(u_id2 not in updated_channel['membersUID'])
+    info2 = channel_utils.create_user_info(u_id2, 'Khanh', 'Nguyen')
+    assert(info2 not in updated_channel['members'])
+    
+    channel_utils.channel_addowner(token1, channel_id, u_id3)
+    channel_utils.channel_leave(token3, channel_id)
+    updated2_channel = channel_utils.get_channel(channel_id)
+    assert(u_id3 not in updated2_channel['membersUID'])
+    assert(u_id3 not in updated2_channel['ownersUID'])
+    
+    
+def test_channel_detial():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    user2 = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    channel_utils.channel_join(token2, channel_id)
+    
+    channel = channel_utils.get_channel(channel_id) 
+    
+    ans = {
+        'name': 'Ian',
+        'all_members': [u_id1, u_id2],
+        'owner_members': [u_id1]
+    }      
+    
+    assert (channel_utils.channel_details(token1, channel_id) == ans)
+    with pytest.raises(ValueError):
+        assert (channel_utils.channel_details(token1, 1234) == ans)
+        
+    
+def test_channel_messages1():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    
+    for i in range(0,100):
+        text = str(i)
+        message_utils.message_send(token1, channel_id, text)
+    
+    
+    messages = channel_utils.channel_messages(token1, channel_id, 0) 
+    assert(messages['end'] == 50)
+    assert(messages['start'] == 0)
+    assert(len(messages['messages']) == 50)
+   
+def test_channel_messages2():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    
+    for i in range(0,20):
+        text = str(i)
+        message_utils.message_send(token1, channel_id, text)
+    
+    
+    messages = channel_utils.channel_messages(token1, channel_id, 0) 
+    assert(messages['end'] == -1)
+    assert(messages['start'] == 0)
+    assert(len(messages['messages']) == 20) 
+  
+def test_channel_messages3():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    user2 = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    
+    for i in range(0,100):
+        text = str(i)
+        message_utils.message_send(token1, channel_id, text)
+    
+    
+    messages = channel_utils.channel_messages(token1, channel_id, 20) 
+    assert(messages['end'] == 70)
+    assert(messages['start'] == 20)
+    assert(len(messages['messages']) == 50) 
+    
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_messages(token1, channel_id, 200))
+        
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_messages(token1, 123414, 20))
+    
+    with pytest.raises(errors.AccessError):
+        assert(channel_utils.channel_messages(token2, channel_id, 20))        
+    
+def test_channel_invite():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    user2 = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', True)['channel_id']
+    with pytest.raises(ValueError):
+        assert(channel_utils.channel_invite(token1, 1234, u_id2))    
+    channel_utils.channel_invite(token1, channel_id, u_id2)
+    channel = channel_utils.get_channel(channel_id) 
+    assert(u_id2 in channel['membersUID'])
+    
+    user3 = authentication.auth_register('vailfwhgrehid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token3 = user3['token']
+    u_id3 = authentication.decode_token(token3)['u_id']
+    with pytest.raises(errors.AccessError):
+         assert(channel_utils.channel_invite(token3, channel_id, u_id2)) 
+       
+def test_channel_join():
+    storage.clear_data_store()
+    
+    user1 = authentication.auth_register('janvailwqwid2@gmail.com', '123456', 'jan', 'Nguyen')
+    token1 = user1['token']
+    u_id1 = authentication.decode_token(token1)['u_id']
+    
+    channel_id = channel_utils.channels_create(token1, 'Ian', False)['channel_id']
+    
+    user2 = authentication.auth_register('vailfwefwid2@gmail.com', '123456', 'Khanh', 'Nguyen')
+    token2 = user2['token']
+    u_id2 = authentication.decode_token(token2)['u_id']
+    
+    with pytest.raises(errors.AccessError):
+        assert(channel_utils.channel_join(token2, channel_id))
+    
+    
+    
+    
+         
+    
+                   
+    
+    
+    
+    
+    
+    
+       
+         
+    
+    
+    
+        
+    
+            
+    
+    
+    
+    
+    
+    
+

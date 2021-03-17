@@ -1,0 +1,321 @@
+import os
+import pickle
+
+import pytest
+
+from datetime import datetime
+from backend import authentication, storage
+from backend import user as user_utils
+from backend import utils
+from backend import errors
+
+
+  
+       
+    
+
+'''
+channels = [channel1, channel2, ......]    
+
+channel = {
+    'name' = 'channelname',
+    'is_public' = something 
+    'channelID' = 123,
+    'members' = [{'first_name': 123, 'last_name': 123, 'u_id':123}, { }   ]
+    'membersUID' = [123, 123]
+    'ownersUID' = [123, 123]
+    'messages' = [{ 'message_id': 123, 'u_id': 123, 'message': 123, 'time_created': 123 , 'reacts': 123, 'is_pinned': 123 }, ......]
+
+}
+
+message = {
+   'message_id' = 0
+   'u_id' = 0
+   'message' = ''
+   'time_created' = datetime
+   'reacts' = [{ react_id, u_ids[], is_this_user_reacted[] }]
+   'is_pinned' = False
+}
+
+'''
+#import data
+def get_data():
+    data = storage.load_data_store()
+    if "channels" not in data:
+        data["channels"] = []
+	
+    return data 
+
+#search a channel with a given id, return bool
+def search_channel(channel_id):
+    data = get_data()
+    
+    for channel in data['channels']:
+        if channel['channelID'] == channel_id:
+            return True
+    
+    return False
+
+#looking for channel with given id in list
+def get_channel(channel_id):
+    data = get_data()
+    for channel in data['channels']:
+        if channel['channelID'] == channel_id:
+            return channel
+    
+    return False   
+
+#generate ID for a channel
+def getchannelID():
+    return utils.generate_luid()
+
+
+# pack all the given user info into a dictionary
+def create_user_info(u_id, first_name, last_name):
+    user = {}
+    user['first_name'] = first_name
+    user['last_name'] = last_name
+    user['u_id'] = u_id
+
+    return user
+
+
+def channel_invite(token, channel_id, u_id):
+    auth_u_id = authentication.decode_token(token)['u_id']
+    
+    data = get_data()
+    for c in data['channels']:
+        if c['channelID'] == channel_id:
+            channel = c
+            break
+    
+    if search_channel(channel_id) == False:
+        raise ValueError('channel_id does not refer to a valid channel')
+    
+    if auth_u_id not in channel['membersUID']:
+        raise errors.AccessError('the authorised user is not part of the channel')
+    
+    first_name = user_utils.user_profile(token, u_id)['name_first']
+    last_name = user_utils.user_profile(token, u_id)['name_last']
+    channel['membersUID'].append(u_id)
+    user = create_user_info(u_id, first_name, last_name)
+    channel['members'].append(user)
+
+    storage.dump_data_store(data)#save to pickle
+
+def channel_details(token, channel_id):
+
+    channel = get_channel(channel_id)
+    if channel == False:
+        raise ValueError('channel id is invalid')
+
+    u_id = authentication.decode_token(token)["u_id"]
+
+    if u_id not in channel['membersUID']:
+        raise errors.AccessError('User is not a member of channel with channel_id')
+    
+    return {
+        'name': channel['name'],
+        'all_members': channel['membersUID'],
+        'owner_members': channel['ownersUID']
+    }
+
+
+def channel_messages(token, channel_id, start):
+    auth_u_id = authentication.decode_token(token)['u_id']
+
+    if search_channel(channel_id) == False:
+        raise ValueError('channel_id does not refer to a valid channel')
+
+    channel = get_channel(channel_id)
+
+    n_messages = len(channel['messages'])
+
+    if start > n_messages:
+        raise ValueError(
+            'start is greater than the total number of messages in the channel')
+
+    if auth_u_id not in channel['membersUID']:
+        raise errors.AccessError(
+            'Authorised user is not a member of channel with channel_id')
+
+    m_list = []
+    i = start
+    messages = channel['messages']
+    
+    while i < start + 50 and i < n_messages:
+        m_list.append(messages[i])
+        i += 1
+        
+    if i == n_messages:
+        end = -1
+    else:
+        end = i
+    
+    return {
+        "messages": m_list,
+        "start": start,
+        "end": end
+    }
+
+
+def channel_leave(token, channel_id):
+    u_id = authentication.decode_token(token)['u_id']
+    if search_channel(channel_id) == False:
+        raise ValueError('channel id is invalid')
+
+    data = get_data()
+    for c in data['channels']:
+        if c['channelID'] == channel_id:
+            channel = c
+            break 
+    
+    first_name = user_utils.user_profile(token, u_id)['name_first']
+    last_name = user_utils.user_profile(token, u_id)['name_last']
+    channel['membersUID'].remove(u_id)
+    user = create_user_info(u_id, first_name, last_name)
+    channel['members'].remove(user)
+
+    if u_id in channel['ownersUID']:
+        channel['ownersUID'].remove(u_id)
+    
+    storage.dump_data_store(data)
+
+def channel_join(token, channel_id):
+    u_id = authentication.decode_token(token)['u_id']
+    
+    data = get_data()
+    for c in data['channels']:
+        if c['channelID'] == channel_id:
+            channel = c
+            break 
+    
+    if search_channel(channel_id) == False:
+        raise ValueError('channel id is invalid')
+    if channel['is_public'] == False:
+        raise errors.AccessError('channel is not public')
+
+    first_name = user_utils.user_profile(token, u_id)['name_first']
+    last_name = user_utils.user_profile(token, u_id)['name_last']
+    channel['membersUID'].append(u_id)
+    user = create_user_info(u_id, first_name, last_name)
+    channel['members'].append(user)
+    
+    storage.dump_data_store(data)
+
+
+
+def channel_addowner(token, channel_id, u_id):
+
+    if authentication.decode_token(token) == None:
+        raise errors.AccessError('authorised user is not an owner of the slackr')
+    auth_u_id = authentication.decode_token(token)['u_id']
+    if search_channel(channel_id) == False:
+        raise ValueError('channel id is invalid')
+    if u_id in get_channel(channel_id)['ownersUID']:
+        raise ValueError('user is already an owner of the channel')
+    if auth_u_id not in get_channel(channel_id)['ownersUID']:
+        raise errors.AccessError('authorised user is not a owner of the channel')
+
+    data = get_data()
+    for channel in data['channels']:
+        if channel['channelID'] == channel_id:
+            if u_id in channel['membersUID']:
+                channel['ownersUID'].append(u_id)
+            else:
+                first_name = user_utils.user_profile(token, u_id)['name_first']
+                last_name = user_utils.user_profile(token, u_id)['name_last']
+                channel['ownersUID'].append(u_id)
+                channel['membersUID'].append(u_id)
+                user = create_user_info(u_id, first_name, last_name)
+                channel['members'].append(user)    
+            break
+         
+    storage.dump_data_store(data) #save      
+    
+    
+    
+
+def channel_removeowner(token, channel_id, u_id):
+    auth_u_id = authentication.decode_token(token)['u_id']
+   
+    if auth_u_id == None:
+        raise errors.AccessError('authorised user is not an owner of the slackr')
+    if search_channel(channel_id) == False:
+        raise ValueError('channel id is invalid')
+    if u_id not in get_channel(channel_id)['ownersUID']:
+        raise ValueError('user is not an owner of the channel')
+    if auth_u_id not in get_channel(channel_id)['ownersUID']:
+        raise errors.AccessError('authorised user is not a owner of the channel')
+    
+    data = get_data()
+    for channel in data['channels']:
+        if channel['channelID'] == channel_id:
+            channel['ownersUID'].remove(u_id)
+            break
+         
+    storage.dump_data_store(data) #save       
+            
+    
+
+
+def channels_list(token):
+    data = get_data()
+    l = []
+    u_id = authentication.decode_token(token)['u_id']
+
+    for channel in data['channels']:
+        if u_id in channel['membersUID']:
+            detail = {}
+            detail['channel_id'] = channel['channelID']
+            detail['name'] = channel['name']
+            l.append(detail)
+    
+    return {
+        'channels': l
+    }
+
+
+def channels_listall(token):
+    data = get_data()
+    listall = []
+    for channel in data['channels']:
+        detail = {}
+        detail['channel_id'] = channel['channelID']
+        detail['name'] = channel['name']
+        listall.append(detail)
+    
+    return {
+        'channels': listall
+    }
+
+
+def channels_create(token, name, is_public):
+    data = get_data()
+    u_id = authentication.decode_token(token)['u_id']
+    first_name = user_utils.user_profile(token, u_id)['name_first']
+    last_name = user_utils.user_profile(token, u_id)['name_last']
+
+    user = create_user_info(u_id, first_name, last_name)
+
+    channel = {}
+
+    channelID = getchannelID()
+
+    channel['name'] = name
+    channel['is_public'] = is_public
+    channel['channelID'] = channelID
+    channel['messages'] = []
+    channel['membersUID'] = [u_id]
+    channel['ownersUID'] = [u_id]
+    channel['members'] = [user]
+    channel['standup_time'] = datetime.now()
+
+    data['channels'].append(channel)  # join the new channel to channels list
+    
+    storage.dump_data_store(data)
+    
+    return {
+        'channel_id': channelID
+    }
+
